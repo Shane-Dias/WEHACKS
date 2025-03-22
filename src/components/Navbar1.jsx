@@ -16,7 +16,7 @@ import {
 } from "@mui/material";
 import { useNavigate, Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import logo from "/image.png";
+import logo from "/logo2.png";
 import MenuIcon from "@mui/icons-material/Menu";
 
 const Navbar = () => {
