@@ -734,28 +734,28 @@ class CommentListCreateView(APIView):
             )
     
 
-# @api_view(['GET'])
-# def save_score(request):
-#     allincidents = Incidents.objects.all()
+@api_view(['GET'])
+def save_score(request):
+    allincidents = Incidents.objects.all()
     
-#     for incident in allincidents:
-#         incident.true_or_false = True
-#         incident.save()  # Save the updated score to the database
+    for incident in allincidents:
+        incident.true_or_false = True
+        incident.save()  # Save the updated score to the database
     
-#     return Response({"message": "All incidents updated successfully."})
+    return Response({"message": "All incidents updated successfully."})
 
-# @api_view(['GET'])
-# def view_incident(request, id):
-#    try:
-#        incident = get_object_or_404(Incidents, id=id)
-#        serializer = IncidentSerializer(incident, context={'request': request})
-#        return Response(serializer.data, status=200)
-#    except Exception as e:
-#        return Response({'error': str(e)}, status=400)
+@api_view(['GET'])
+def view_incident(request, id):
+   try:
+       incident = get_object_or_404(Incidents, id=id)
+       serializer = IncidentSerializer(incident, context={'request': request})
+       return Response(serializer.data, status=200)
+   except Exception as e:
+       return Response({'error': str(e)}, status=400)
 
 
-# def get_google_maps_link(latitude, longitude):
-#     return f"https://www.google.com/maps?q={latitude},{longitude}"
+def get_google_maps_link(latitude, longitude):
+    return f"https://www.google.com/maps?q={latitude},{longitude}"
 
 class ChatbotView_Therapist(APIView):
     parser_classes=[JSONParser]
