@@ -3,8 +3,8 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
+  
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-
   // Check if user is logged in on component mount
   useEffect(() => {
     const storedToken =
@@ -29,6 +29,12 @@ export const AuthProvider = ({ children }) => {
     setIsLoggedIn(true);
   };
 
+  
+  // Log the login state when it changes
+  useEffect(() => {
+    console.log("Login State after Signup:", isLoggedIn);
+  }, [isLoggedIn]);
+
   const logout = () => {
     // Clear token from both localStorage and sessionStorage
     localStorage.removeItem("accessToken");
@@ -38,11 +44,6 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem("lastLoginTime");
     setIsLoggedIn(false);
   };
-
-  // Log the login state when it changes
-  useEffect(() => {
-    console.log("Login State after Signup:", isLoggedIn);
-  }, [isLoggedIn]);
 
   return (
     <AuthContext.Provider value={{ isLoggedIn, login, logout }}>
