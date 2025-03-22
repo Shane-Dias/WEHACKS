@@ -5,7 +5,12 @@ from .models import Incidents, PoliceStations, FireStations, DisasterReliefStati
 # Register your models here.
 admin.site.register(User)
 admin.site.register(Incidents)
+admin.site.register(PoliceStations)
+admin.site.register(FireStations)
+admin.site.register(DisasterReliefStations)
 admin.site.register(Admin)
+# admin.site.register(Hospital)
+# admin.site.register(NGO)
 @admin.register(Comment)
 
 class CommentAdmin(admin.ModelAdmin):

@@ -334,6 +334,469 @@ class form_report(APIView):
 
         incident.save()
 
+    # def notify_new_incident(self, station, incident):
+    #     """Send email notification to the assigned station"""
+    #     try:
+    #         message = (
+    #             f"New {incident.incidentType} reported!\n"
+    #             f"Severity: {incident.severity}\n"
+    #             f"Location: ({incident.location['latitude']}, {incident.location['longitude']})\n"
+    #             f"Description: {incident.description}\n"
+    #             f"Reported by: {incident.reported_by.first_name} {incident.reported_by.last_name}"
+    #         )
+    #         number = "+91"+str(station.number)
+    #         # send_sms(message, number)
+    #         send_email_example(f"New {incident.severity.capitalize()} Priority Incident Alert", message, station.email)
+    #     except Exception as e:
+    #         print(f"Notification error for station {station.id}: {str(e)}")
+
+class voicereport(APIView):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.llm = model  # Ensure `model` is defined
+        self.prompt = ChatPromptTemplate.from_messages([
+            ('system', """
+                Analyze the provided incident report and return a structured JSON response that strictly follows the given format.
+                
+                - Preserve all field names exactly as in the provided example.
+                - Ensure values are correctly formatted based on the input.
+                - Determine the severity level as 'high', 'medium', or 'low' based on the incident details.
+                - Extract any location information from the user input if present
+                - Do not add, remove, or modify any fields.
+                - Ensure the response is a valid JSON object.
+            """),
+            ('human', "Expected JSON format: {json_format}"),
+            ('human', "Incident details: {user_input}")
+        ])
+        self.chain = self.prompt | self.llm | StrOutputParser()
+
+    def post(self, request, *args, **kwargs):
+        # Authenticate user
+        print("function started")
+        user = None
+        auth_header = request.META.get('HTTP_AUTHORIZATION')
+        if auth_header and auth_header.startswith('Bearer '):
+            try:
+                token_str = auth_header.split(' ')[1]
+                token = AccessToken(token_str)
+                user = User.objects.get(id=token['user_id'])
+            except Exception as e:
+                return Response({"error": "Invalid or expired token"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if not user:
+            user, _ = User.objects.get_or_create(
+                email='anonymous@example.com',
+                defaults={'first_name': 'Anonymous', 'last_name': 'User', 'phone_number': '0000000000'}
+            )
+        json_format = """{
+            "incidentType": "Accident",
+            "location": "A-201, Shubham CHS, Gaurav garden complex 2, Kandivali West, Mumbai",
+            "description": "I've been in a terrible accident",
+            "severity": "high"
+        }"""
+
+        user_input = request.data.get("user_input", "").strip()
+        latitude = request.data.get("latitude", "")
+        longitude = request.data.get("longitude", "")
+        
+        if not user_input:
+            return Response({"error": "user_input is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # First, get the incident details from LLM without providing coordinates
+        chain_input = {"user_input": user_input, "json_format": json_format}
+        incident = self.chain.invoke(chain_input)
+        match = re.search(r'\{.*\}', incident, re.DOTALL)
+        if match:
+            json_string = match.group()
+            incident = json.loads(json_string)
+        
+        if 'error' in incident:
+            return Response(incident, status=status.HTTP_400_BAD_REQUEST)
+        
+        print("passed error check")
+        
+        # Check if location was found in user input
+        if not incident.get('location') and (not latitude or not longitude):
+            return Response({"error": "Location not specified in the incident report and no coordinates provided."}, 
+                          status=status.HTTP_400_BAD_REQUEST)
+        
+        # If no location in user input but coordinates are provided, use coordinates
+        if not incident.get('location') and latitude and longitude:
+            incident['location'] = f"{latitude}, {longitude}"
+        
+        # Convert location to coordinates
+        location_data = get_coordinates(incident['location'])
+        if not location_data:
+            return Response({"error": "Could not process location information"}, 
+                          status=status.HTTP_400_BAD_REQUEST)
+        
+        incident['location'] = location_data
+        print(incident)
+        
+        serializer = IncidentSerializer(data=incident)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        incident_obj = serializer.save(reported_by=user)
+
+        user_lat = incident['location'].get('latitude')
+        user_lon = incident['location'].get('longitude')
+
+        if user_lat is None or user_lon is None:
+            return Response({"error": "Invalid location data"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Nearest stations lookup
+        station_map = {
+            'Domestic Violence': [PoliceStations],
+            'Child Abuse': [PoliceStations],
+            'Sexual Harassment': [PoliceStations],
+            'Stalking': [PoliceStations],
+            'Human Trafficking': [PoliceStations],
+            'Fire': [FireStations, PoliceStations, Hospital],
+            'Theft': [PoliceStations],
+            'Accident': [PoliceStations, Hospital],
+            'Missing Persons': [PoliceStations], 
+            'Medical Emergency': [Hospital], 
+            'Other': [None]
+        }
+        station_models = station_map.get(incident.get('incidentType'), [])
+        nearest_stations = {'police_station': None, 'fire_station': None, 'hospital_station': None}
+
+        for station_model in station_models:
+            if station_model is None:
+                continue
+            stations = station_model.objects.all()
+            if stations.exists():
+                nearest_station = min(stations, key=lambda s: great_circle((user_lat, user_lon), (s.latitude, s.longitude)).km)
+                if station_model == PoliceStations:
+                    nearest_stations['police_station'] = nearest_station
+                elif station_model == FireStations:
+                    nearest_stations['fire_station'] = nearest_station
+                elif station_model == Hospital:
+                    nearest_stations['hospital_station'] = nearest_station
+
+                try:
+                    send_email_example("New Incident Alert", f"New {incident['incidentType']} \nreported at {incident['location']}", nearest_station.email)
+                except Exception as e:
+                    print(f"Notification error: {str(e)}")
+
+        incident_obj.police_station = nearest_stations['police_station']
+        incident_obj.fire_station = nearest_stations['fire_station']
+        incident_obj.hospital_station = nearest_stations['hospital_station']
+        incident_obj.save()
+
+        return Response({"message": "Incident reported successfully!", "incident_id": incident_obj.id}, status=status.HTTP_201_CREATED)
+
+
+@api_view(['PATCH'])
+def update_incident(request, id):
+    status = request.data.get("status")
+    try:
+        incident = get_object_or_404(Incidents, id=id)
+        incident.status = status
+        incident.save()
+        serializer = IncidentSerializer(incident)
+        user = incident.reported_by
+        print("information gotten")
+        # Send Email Notification
+        # subject = f"Incident Status Updated: {incident.id}"
+        #subject = f"Incident Status Updated: {incident.id}"
+        # message = f"Dear {user.first_name},\n\nThe status of your reported incident (ID: {incident.id}) has been updated to: {status}.\n\nThank you,\nIncident Management Team"
+        # recipient_email = user.email  # Get user email
+        # print("Information recieved")
+        # send_email_example(subject, message, email=recipient_email)
+        return Response(serializer.data, status=200)
+    except Exception as e:
+        return Response({"message": f"Error Occurred: {e}"}, status=400)      
+
+# def send_sms(message, number):
+#     account_sid = 'ACa342288beff5795775a39a8ba798b51b'
+#     auth_token = 'f35864d84f9fd0b14453405c8168d76d'
+#     client = Client(account_sid, auth_token)
+#     sms = client.messages.create(
+#     messaging_service_sid='MGa0dd71e727f8ff58f14fc197430c0988',
+#     body=message,
+#     to = number
+#     # to='+918452950512'
+#     )
+#     return Response({'message': 'sms sent successfully'})
+
+
+def send_email_example(subject, message, email):
+    send_mail(
+        subject=subject,
+        message=message,
+        from_email='mayankhmehta80@gmail.com',
+        recipient_list=[email],
+        fail_silently=False,
+    )
+    return Response({'message': 'email sent successfully'})
+
+
+# Function to get coordinates from Geoapify Geocoding API
+def get_coordinates(location):
+    api_key = "fabe86e749c44aa2a8ae60c68c2e3c6f"
+    url = f"https://api.geoapify.com/v1/geocode/search?text={location}&apiKey={api_key}"
+    headers = requests.structures.CaseInsensitiveDict()
+    headers["Accept"] = "application/json"
+    response = requests.get(url, headers=headers)
+    data = response.json()
+    print(data)
+    if data['features']:
+        coords = data['features'][0]['geometry']['coordinates']
+        return {"latitude": coords[1], "longitude": coords[0]}  # Return latitude, longitude
+    else:
+        raise ValueError(f"Could not find coordinates for location: {location}")
+    
+class LatestIncidentsView(generics.ListAPIView):
+    serializer_class = IncidentSerializer
+    queryset = Incidents.objects.all().order_by('-reported_at')  # Get latest first
+    
+    def get_queryset(self):
+        return self.queryset.prefetch_related('comments')[:10]  # Get 10 latest with comments
+
+
+
+class CommentCreateView(generics.CreateAPIView):
+    serializer_class = CommentSerializer
+    
+    def create(self, request, *args, **kwargs):
+        email = request.data.get('user_email')
+        incident_id = request.data.get('commented_on')
+        
+        # Verify user exists
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return Response(
+                {"error": "User not found. Please login first."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Verify incident exists
+        try:
+            incident = Incidents.objects.get(id=incident_id)
+        except Incidents.DoesNotExist:
+            return Response(
+                {"error": "Incident not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Create comment
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(commented_by=user, commented_on=incident)
+        
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+@api_view(['GET'])
+def all_user_incidents(request):
+    try:
+        # Extract the Authorization header
+        auth_header = request.META.get('HTTP_AUTHORIZATION', None)
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return Response({"error": "Authorization header missing or malformed"}, status=400)
+
+        # Extract the token from the header
+        token_str = auth_header.split(' ')[1]  # 'Bearer <token>'
+        token = AccessToken(token_str)
+
+        # Validate and retrieve the user
+        user = User.objects.get(id=token['user_id'])
+
+        # Fetch incidents for the user
+        incidents = Incidents.objects.filter(reported_by=user).values()
+        print(incidents)
+        return Response({"incidents": list(incidents)}, status=200)
+    except User.DoesNotExist:
+        return Response({"error": "User not found"}, status=404)
+    except Exception as e:
+        return Response({"error": f"There was an error while finding the reports: {e}"}, status=400)
+    
+@api_view(['GET'])
+def all_ongoing_incidents(request):
+    incidents = Incidents.objects.filter(status="Submitted")
+    return Response(incidents, status=201)
+
+@api_view(['GET'])
+def all_incidents(request):
+    incidents = Incidents.objects.all()
+    serializer = IncidentSerializer(incidents, many=True)
+    return Response(serializer.data, status=201)
+
+@api_view(['GET', 'POST'])
+def all_station_incidents(request):
+    # Check for the presence and validity of the authorization header
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return Response(
+            {"error": "Authorization header missing or malformed"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        # Extract and validate the token
+        token_str = auth_header.split(' ')[1]
+        token = AccessToken(token_str)
+        admin = get_object_or_404(Admin, id=token['user_id'])
+    except Exception:
+        return Response(
+            {"error": "Invalid or expired token"},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+
+    # Determine the station to filter incidents
+    incidents = Incidents.objects.none()  # Default empty queryset
+    if admin.police_station:
+        incidents = Incidents.objects.filter(police_station=admin.police_station, true_or_false=True)
+    elif admin.fire_station:
+        incidents = Incidents.objects.filter(fire_station=admin.fire_station, true_or_false=True)
+    elif admin.hospital:
+        incidents = Incidents.objects.filter(hospital_station=admin.hospital, true_or_false=True)
+    else:
+        return Response(
+            {"error": "Admin is not associated with any station"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if request.method == 'GET':
+        # Serialize and return incidents that are marked true
+        serializer = IncidentSerializer(incidents, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    # Handle toggle requests (POST method)
+    if request.method == 'POST':
+        incident_id = request.data.get("incident_id")
+        if not incident_id:
+            return Response({"error": "Incident ID is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Ensure the admin can only toggle incidents related to their station
+            incident = incidents.get(id=incident_id)
+            incident.true_or_false = not incident.true_or_false  # Toggle flagged state
+            incident.save()
+            return Response({"message": f"Flagged status toggled to {incident.true_or_false}"}, status=status.HTTP_200_OK)
+        except Incidents.DoesNotExist:
+            return Response({"error": "Incident not found or unauthorized"}, status=status.HTTP_404_NOT_FOUND)
+
+
+class CommentListCreateView(APIView):
+
+    def get(self, request, incident_id):
+        comments = Comment.objects.filter(commented_on_id=incident_id).order_by('-commented_at')
+        serializer = CommentSerializer(comments, many=True)
+        return Response(serializer.data)
+
+    def post(self, request, incident_id):
+        # Extract the Authorization header
+        auth_header = request.headers.get('Authorization', None)
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return Response({"error": "Authorization header missing or malformed"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Extract the token from the header
+        token_str = auth_header.split(' ')[1]
+        try:
+            token = AccessToken(token_str)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Verify the incident exists
+            incident = get_object_or_404(Incidents, id=incident_id)
+
+            # Get the comment text
+            comment_text = request.data.get('comment', "").strip()
+
+            # Check for spam or cuss words
+            if contains_cuss_words(comment_text) or is_spam(comment_text):
+                return Response(
+                    {"error": "Your comment contains inappropriate content or spam."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Prepare the data
+            serializer_data = {
+                'comment': comment_text,
+                'commented_on': incident.id
+            }
+
+            serializer = CommentSerializer(data=serializer_data)
+            if serializer.is_valid():
+                serializer.save(commented_by_id=token['user_id'])
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        except Incidents.DoesNotExist:
+            return Response(
+                {"error": "Incident not found"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+    
+
+# @api_view(['GET'])
+# def save_score(request):
+#     allincidents = Incidents.objects.all()
+    
+#     for incident in allincidents:
+#         incident.true_or_false = True
+#         incident.save()  # Save the updated score to the database
+    
+#     return Response({"message": "All incidents updated successfully."})
+
+# @api_view(['GET'])
+# def view_incident(request, id):
+#    try:
+#        incident = get_object_or_404(Incidents, id=id)
+#        serializer = IncidentSerializer(incident, context={'request': request})
+#        return Response(serializer.data, status=200)
+#    except Exception as e:
+#        return Response({'error': str(e)}, status=400)
+
+
+# def get_google_maps_link(latitude, longitude):
+#     return f"https://www.google.com/maps?q={latitude},{longitude}"
+
+class ChatbotView_Therapist(APIView):
+    parser_classes=[JSONParser]
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.llm = model
+        self.prompt = ChatPromptTemplate.from_messages([
+            ("system", """
+             You are an AI assistant specializing in both therapy and legal guidance in India.
+            As a therapist, provide empathetic emotional support, comfort, and guidance, especially for users dealing with trauma.
+            As a legal guidance officer, offer clear, concise advice based on Indian law, ensuring accuracy and relevance.
+            Balance both roles carefully—your responses should be brief yet compassionate, legally sound, and practical. If appropriate, use the user’s location to recommend nearby government agencies or legal resources for further assistance.
+             """),
+            MessagesPlaceholder(variable_name="chat_history"),
+            ("human", "{user_input}"),
+        ])
+        self.chain = self.prompt | self.llm | StrOutputParser()
+
+    def post(self, request, *args, **kwargs):
+        user_input = request.data.get("user_input", "").strip()
+        chat_history = request.data.get("chat_history")
+        location = request.data.get("location")
+
+        if not isinstance(chat_history, list):  # Ensure chat_history is a list
+            chat_history = []
+
+        if not user_input:
+            return Response({"error": "user_input is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        chain_input = {"user_input": user_input, "chat_history": chat_history, "location": location}
+        response = self.chain.invoke(chain_input)
+
+        chat_history.append(f"User: {user_input}")
+        chat_history.append(f"Bot: {response}")
+
+        return Response({
+            "user_input": user_input,
+            "bot_response": response,
+            "chat_history": chat_history,
+        }, status=status.HTTP_200_OK)
+
 from django.core.serializers.json import DjangoJSONEncoder
 from django.utils.timezone import now, make_aware
 @api_view(['GET'])
@@ -648,4 +1111,87 @@ def get_incident_statistics(request):
         'score_trend': score_trend,
         'total_incidents': user_incidents.count(),
         'average_score': user_incidents.aggregate(Avg('score'))['score__avg'] or 0
+    })
+
+
+@api_view(['GET'])
+def get_incident_analytics(request):
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return Response(
+            {"error": "Authorization header missing or malformed"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        # Extract and validate the token
+        token_str = auth_header.split(' ')[1]
+        token = AccessToken(token_str)
+        admin = get_object_or_404(Admin, id=token['user_id'])
+    except Exception:
+        return Response(
+            {"error": "Invalid or expired token"},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+    # Get the admin user
+    admin = Admin.objects.get(id=token['user_id'])
+    
+    # Base queryset filtered by admin's station
+    base_queryset = Incidents.objects.all()
+    if admin.police_station:
+        base_queryset = base_queryset.filter(police_station=admin.police_station)
+    elif admin.fire_station:
+        base_queryset = base_queryset.filter(fire_station=admin.fire_station)
+    elif admin.hospital:
+        base_queryset = base_queryset.filter(hospital_station=admin.hospital)
+    
+    # Get date range for last 30 days
+    end_date = timezone.now()
+    start_date = end_date - timedelta(days=30)
+    
+    # Get incidents by type
+    incidents_by_type = base_queryset.values('incidentType')\
+        .annotate(count=Count('id'))\
+        .order_by('-count')
+
+    # Get incidents by severity
+    incidents_by_severity = base_queryset.values('severity')\
+        .annotate(count=Count('id'))
+
+    # Get incidents by status
+    incidents_by_status = base_queryset.values('status')\
+        .annotate(count=Count('id'))
+
+    # Get daily incidents for the last 30 days
+    daily_incidents = base_queryset.filter(
+        reported_at__range=[start_date, end_date]
+    ).extra(
+        select={'date': 'DATE(reported_at)'}
+    ).values('date').annotate(
+        count=Count('id')
+    ).order_by('date')
+
+    # Calculate average resolution time
+    resolved_incidents = base_queryset.filter(
+        status='resolved',
+        resolved_at__isnull=False
+    )
+    
+    avg_resolution_time = 0
+    if resolved_incidents.exists():
+        total_time = sum(
+            (incident.resolved_at - incident.reported_at).total_seconds()
+            for incident in resolved_incidents
+        )
+        avg_resolution_time = total_time / resolved_incidents.count() / 3600  # in hours
+
+    return Response({
+        'incidents_by_type': incidents_by_type,
+        'incidents_by_severity': incidents_by_severity,
+        'incidents_by_status': incidents_by_status,
+        'daily_incidents': daily_incidents,
+        'total_incidents': base_queryset.count(),
+        'avg_resolution_time': round(avg_resolution_time, 2),
+        'pending_incidents': base_queryset.filter(status='submitted').count(),
+        'resolved_incidents': base_queryset.filter(status='resolved').count()
     })
