@@ -8,14 +8,19 @@ import SignUp from "./pages/SignUp";
 import Login from "./pages/Login";
 import ScrollToTop from "./lib/ScrollToTop";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import ViewDetails from "./pages/ViewDetails";
+import UserRoute from "./protected-routes/UserRoute";
+import AdminRoute from "./protected-routes/AdminRoute";
 import UserProfile from "./pages/UserProfile";
 import { LocationProvider } from "../src/context/LocationContext";
-import HeatMap from "./components/Heatmap";
 
 const UserDashboard = lazy(() => import("./pages/UserDashboard"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
-const HeatMap = lazy(() => import("./components/Heatmap"));
+const AboutUs = lazy(() => import("./pages/AboutUs"));
+const RecentIncidents = lazy(() => import("./pages/RecentIncidents1"));
+const HeatMap2 = lazy(() => import("./components/Heatmap"));
 const IncidentReportForm = lazy(() => import("./pages/IncidentReportForm2"));
+const FeedbackForm = lazy(() => import("./pages/FeedbackForm"));
 const Chatbot = lazy(() => import("./pages/chatbotTrial"));
 
 if ("serviceWorker" in navigator) {
@@ -44,18 +49,27 @@ const App = () => {
                   path="/report-incident"
                   element={<IncidentReportForm />}
                 />
-                {/* Protect Admin Route */}
-                <Route path="/admin" element={<AdminDashboard />} />
-                {/* Protect User Route */}
-                <Route path="/my-reports" element={<UserDashboard />} />
+                {/* Protected Admin Route */}
+                <Route element={<AdminRoute />}>
+                  <Route path="/admin" element={<AdminDashboard />} />
+                </Route>
+                {/* Protected User Route */}
+                <Route element={<UserRoute />}>
+                  <Route path="/my-reports" element={<UserDashboard />} />
+                </Route>
                 <Route path="/my-reports" element={<UserDashboard />} />
                 <Route path="/admin" element={<AdminDashboard />} />
                 <Route path="/About" element={<AboutUs />} />
-                <Route path="/heatmap" element={<HeatMap />} />
+                <Route path="/heatmap" element={<HeatMap2 />} />
                 <Route path="/voice-report" element={<VoiceToText />} />
                 <Route path="/signUp" element={<SignUp />} />
                 <Route path="/login" element={<Login />} />
+                <Route path="/InciLog" element={<RecentIncidents />} />
+                <Route path="/view-details/:id" element={<ViewDetails />} />
+                <Route path="/feedback" element={<FeedbackForm />} />
                 <Route path="chatbot" element={<Chatbot />} />
+                <Route path="/incident/:id" element={<ViewDetails />} />
+                <Route path="/user/:userId" element={<UserProfile />} />
                 {/* Redirect all unknown routes to Home */}
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
