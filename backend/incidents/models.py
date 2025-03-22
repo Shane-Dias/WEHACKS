@@ -6,7 +6,23 @@ from django.utils import timezone
 from decimal import Decimal
 from django.db.models import Count
 
+def get_google_maps_link(latitude, longitude):
+    return f"https://www.google.com/maps?q={latitude},{longitude}"
+class CustomUserManager(BaseUserManager):
+    def create_user(self, email, password=None, **extra_fields):
+        if not email:
+            raise ValueError('The Email field must be set')
+        email = self.normalize_email(email)
+        user = self.model(email=email, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
 
+    def create_superuser(self, email, password=None, **extra_fields):
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+
+        return self.create_user(email, password, **extra_fields)
 class User(AbstractBaseUser):
     first_name = models.CharField(max_length=50)
     last_name = models.CharField(max_length=50)
@@ -47,6 +63,55 @@ class User(AbstractBaseUser):
         # Superusers have access to all modules
         return self.is_superuser
 
+class PoliceStations(models.Model):
+    latitude = models.FloatField()
+    longitude = models.FloatField()
+    number = models.IntegerField()
+    email = models.CharField(max_length=200)
+
+    def __str__(self):
+        return f"Police Station: {self.id}"
+
+class FireStations(models.Model):
+    latitude = models.FloatField()
+    longitude = models.FloatField()
+    number = models.IntegerField()
+    email = models.CharField(max_length=200)
+
+    def __str__(self):
+        return f"Fire Station: {self.id}"
+
+class DisasterReliefStations(models.Model):
+    latitude = models.FloatField()
+    longitude = models.FloatField()
+    number = models.IntegerField()
+    email = models.CharField(max_length=200)
+
+    def __str__(self):
+        return f"Disaster Relief Station: {self.id}"
+    
+class Hospital(models.Model):
+    latitude = models.FloatField()
+    longitude = models.FloatField()
+    number = models.IntegerField()
+    email = models.CharField(max_length=200)
+
+    def __str__(self):
+        return f"Hospital: {self.id}"
+    
+class NGO(models.Model):
+    latitude = models.FloatField()
+    longitude = models.FloatField()
+    number = models.IntegerField()
+    email = models.CharField(max_length=200)
+
+    def __str__(self):
+        return f"NGO Station: {self.id}"
+
+import logging
+
+logger = logging.getLogger(__name__)
+
 class Incidents(models.Model):
     INCIDENT_TYPES = [
         ('Domestic Violence', 'Domestic Violence'),
@@ -83,6 +148,9 @@ class Incidents(models.Model):
     file = models.FileField(upload_to='incident_files/', blank=True, null=True)
     reported_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='incidents', null=True, blank=True)
     reported_at = models.DateTimeField(default=timezone.now)
+    police_station = models.ForeignKey('PoliceStations', on_delete=models.DO_NOTHING, null=True, blank=True)
+    fire_station = models.ForeignKey('FireStations', on_delete=models.DO_NOTHING, null=True, blank=True)
+    hospital_station = models.ForeignKey('Hospital', on_delete=models.DO_NOTHING, null=True, blank=True)
     status = models.CharField(default='submitted', choices=STATUS_CHOICES, max_length=50)
     remarks = models.CharField(default='None', max_length=300)
     maps_link = models.CharField(default="None", max_length=100)
@@ -150,4 +218,30 @@ class Comment(models.Model):
     def __str__(self):
         return f"Comment by {self.commented_by} on Incident {self.commented_on.id}"
 
-    
+class Admin(models.Model):
+    email = models.CharField(max_length=225, null=False)
+    password = models.CharField(max_length=128)
+    # Add foreign key relationships to stations
+    police_station = models.OneToOneField(
+        PoliceStations, on_delete=models.SET_NULL, null=True, blank=True, related_name="admin"
+    )
+    fire_station = models.OneToOneField(
+        FireStations, on_delete=models.SET_NULL, null=True, blank=True, related_name="admin"
+    )
+    disaster_relief_station = models.OneToOneField(
+        DisasterReliefStations, on_delete=models.SET_NULL, null=True, blank=True, related_name="admin"
+    )
+    hospital = models.OneToOneField(
+        Hospital, on_delete=models.SET_NULL, null=True, blank=True, related_name="admin"
+    )
+    NGO_station = models.OneToOneField(
+        NGO, on_delete=models.SET_NULL, null=True, blank=True, related_name="admin"
+    )
+
+    def save(self, *args, **kwargs):
+        """Automatically hash the password before saving."""
+        if not self.password.startswith('pbkdf2_'):  # Avoid rehashing if already hashed
+            self.password = make_password(self.password)
+        super().save(*args, **kwargs)
+    def __str__(self):
+        return f"Admin: (ID: {self.id})"
