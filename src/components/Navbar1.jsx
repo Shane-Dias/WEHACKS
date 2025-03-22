@@ -10,6 +10,9 @@ import {
   Menu,
   MenuItem,
   Drawer,
+  List,
+  ListItem,
+  ListItemText,
 } from "@mui/material";
 import { useNavigate, Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
@@ -18,6 +21,7 @@ import MenuIcon from "@mui/icons-material/Menu";
 
 const Navbar = () => {
   const [anchorEl, setAnchorEl] = useState(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const { isLoggedIn } = useAuth();
@@ -44,6 +48,71 @@ const Navbar = () => {
   const handleNavigation = (route) => {
     navigate(route);
   };
+
+  const sideMenu = (
+    <Box
+      sx={{
+        width: 250,
+        height: "100%",
+        backgroundColor: "#0f192c",
+        padding: 2,
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "space-between",
+      }}
+      onClick={() => toggleDrawer(false)}
+    >
+      <List>
+        {["/", "/About", "/Blogs"].map((route, index) => {
+          const label = route.slice(1) || "Home";
+          return (
+            <ListItem
+              button
+              key={index}
+              onClick={() => handleNavigation(route)}
+              sx={{
+                marginBottom: 1,
+                borderRadius: 2,
+                backgroundColor:
+                  activeLink === route ? "#22d3ee" : "transparent",
+                color: activeLink === route ? "#0f192c" : "#fff",
+                "&:hover": {
+                  backgroundColor: "#22d3ee",
+                  color: "#0f192c",
+                },
+              }}
+            >
+              <ListItemText
+                primary={label}
+                sx={{ textAlign: "center", fontWeight: "bold" }}
+              />
+            </ListItem>
+          );
+        })}
+        <ListItem
+          button
+          onClick={handleMenuClick}
+          sx={{
+            marginBottom: 1,
+            borderRadius: 2,
+            backgroundColor: "transparent",
+            color: "#fff",
+            "&:hover": {
+              backgroundColor: "#22d3ee",
+              color: "#0f192c",
+            },
+          }}
+        >
+          <ListItemText primary="Features" sx={{ textAlign: "center" }} />
+        </ListItem>
+      </List>
+      <Box sx={{ textAlign: "center", paddingTop: 2 }}>
+        <Typography variant="caption" sx={{ color: "#22d3ee" }}>
+          BharatSecure © {new Date().getFullYear()}
+        </Typography>
+      </Box>
+    </Box>
+  );
 
   return (
     <AppBar
@@ -180,10 +249,10 @@ const Navbar = () => {
                 sx={{
                   color: "#22d3ee",
                   fontWeight: "bold",
-                  border: "2px solid #22d3fe",
+                  border: "2px solid #22d3ee",
                   borderRadius: 3,
                   "&:hover": {
-                    backgroundColor: "#22d3fe",
+                    backgroundColor: "#22d3ee",
                     color: "#0f192c",
                   },
                 }}
