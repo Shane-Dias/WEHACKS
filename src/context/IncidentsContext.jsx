@@ -25,7 +25,7 @@ export const IncidentsProvider = ({ children }) => {
       Location: "Latitude: 19.185664, Longitude: 72.8367104",
       Description: "Car accident occurred at the intersection",
       Severity: "High",
-      Status: false,
+      Status: true,
       file: null
     },
     {
@@ -34,8 +34,8 @@ export const IncidentsProvider = ({ children }) => {
       IncidentType: "Disturbance",
       Location:"Latitude: 19.185664, Longitude: 72.8367104",
       Description: "Loud noise complaint from neighbors",
-      Severity: "Low",
-      Status: false,
+      Severity: "High",
+      Status: true,
       file: {
         name: "noise_complaint.txt",
         type: "text/plain",
