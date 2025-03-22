@@ -334,21 +334,21 @@ class form_report(APIView):
 
         incident.save()
 
-    # def notify_new_incident(self, station, incident):
-    #     """Send email notification to the assigned station"""
-    #     try:
-    #         message = (
-    #             f"New {incident.incidentType} reported!\n"
-    #             f"Severity: {incident.severity}\n"
-    #             f"Location: ({incident.location['latitude']}, {incident.location['longitude']})\n"
-    #             f"Description: {incident.description}\n"
-    #             f"Reported by: {incident.reported_by.first_name} {incident.reported_by.last_name}"
-    #         )
-    #         number = "+91"+str(station.number)
-    #         # send_sms(message, number)
-    #         send_email_example(f"New {incident.severity.capitalize()} Priority Incident Alert", message, station.email)
-    #     except Exception as e:
-    #         print(f"Notification error for station {station.id}: {str(e)}")
+    def notify_new_incident(self, station, incident):
+        """Send email notification to the assigned station"""
+        try:
+            message = (
+                f"New {incident.incidentType} reported!\n"
+                f"Severity: {incident.severity}\n"
+                f"Location: ({incident.location['latitude']}, {incident.location['longitude']})\n"
+                f"Description: {incident.description}\n"
+                f"Reported by: {incident.reported_by.first_name} {incident.reported_by.last_name}"
+            )
+            number = "+91"+str(station.number)
+            # send_sms(message, number)
+            send_email_example(f"New {incident.severity.capitalize()} Priority Incident Alert", message, station.email)
+        except Exception as e:
+            print(f"Notification error for station {station.id}: {str(e)}")
 
 class voicereport(APIView):
     def __init__(self, **kwargs):
@@ -509,17 +509,17 @@ def update_incident(request, id):
     except Exception as e:
         return Response({"message": f"Error Occurred: {e}"}, status=400)      
 
-# def send_sms(message, number):
-#     account_sid = 'ACa342288beff5795775a39a8ba798b51b'
-#     auth_token = 'f35864d84f9fd0b14453405c8168d76d'
-#     client = Client(account_sid, auth_token)
-#     sms = client.messages.create(
-#     messaging_service_sid='MGa0dd71e727f8ff58f14fc197430c0988',
-#     body=message,
-#     to = number
-#     # to='+918452950512'
-#     )
-#     return Response({'message': 'sms sent successfully'})
+def send_sms(message, number):
+    account_sid = 'ACa342288beff5795775a39a8ba798b51b'
+    auth_token = 'f35864d84f9fd0b14453405c8168d76d'
+    client = Client(account_sid, auth_token)
+    sms = client.messages.create(
+    messaging_service_sid='MGa0dd71e727f8ff58f14fc197430c0988',
+    body=message,
+    to = number
+    # to='+918452950512'
+    )
+    return Response({'message': 'sms sent successfully'})
 
 
 def send_email_example(subject, message, email):
