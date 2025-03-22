@@ -45,7 +45,6 @@ const Navbar = () => {
     navigate(route);
   };
 
-
   return (
     <AppBar
       position="sticky"
@@ -181,10 +180,10 @@ const Navbar = () => {
                 sx={{
                   color: "#22d3ee",
                   fontWeight: "bold",
-                  border: "2px solid #22d3ee",
+                  border: "2px solid #22d3fe",
                   borderRadius: 3,
                   "&:hover": {
-                    backgroundColor: "#22d3ee",
+                    backgroundColor: "#22d3fe",
                     color: "#0f192c",
                   },
                 }}
