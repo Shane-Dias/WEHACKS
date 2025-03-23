@@ -58,5 +58,6 @@
 | **AI Chatbot** | ![Chatbot](./public/Chatbot.png) |
 | **User Dashboard** | ![User Dashboard](./public/UserDashboard.jpeg) |
 | **Admin Dashboard** | ![Chatbot](./public/AdminDashboard.png) |
+| **InciLog** | ![Chatbot](./public/InciLog.png) |
 
 ---
